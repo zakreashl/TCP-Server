@@ -107,28 +107,35 @@ void draw_box(Layout* layout, Buffer* input_buffer) {
     draw_bottom_bar(layout);
 }
 
-void process_ch(Buffer* input_buffer) {
+void process_ch(Buffer* message_buffer, int client_fd) {
     int ch = getch();
 
     bool new_line = ch == ENTER_KEY;
 
     bool printable_char = (ch >= PRINTABLE_KEY_MIN && ch <= PRINTABLE_KEY_MAX);
-    bool input_buffer_overflow = (input_buffer->end >= input_buffer->buffer + input_buffer->size - 1);
+    bool input_buffer_overflow = (message_buffer->end >= message_buffer->buffer + message_buffer->size - 1);
         
     bool delete_key = (ch == DELETE_KEY);
-    bool input_buffer_underflow = (input_buffer->end < input_buffer->buffer + 1);
+    bool input_buffer_underflow = (message_buffer->end < message_buffer->buffer + 1);
 
-    if (!input_buffer_overflow && printable_char) {
+    if (new_line) {
+        // If it is a new line then send it to the server
+        send(client_fd, message_buffer->buffer, strlen(message_buffer->buffer), 0);
+
+        // Reset the message buffer
+        message_buffer->end = message_buffer->buffer;
+        *message_buffer->end = '\0';
+    } else if (!input_buffer_overflow && printable_char) {
         // Add char to the input buffer
-        *input_buffer->end = ch;
+        *message_buffer->end = ch;
 
         // Add the null terminator
-        input_buffer->end++;
-        *input_buffer->end = '\0';
+        message_buffer->end++;
+        *message_buffer->end = '\0';
     } else if (delete_key && !input_buffer_underflow) {
         // Delete key
-        input_buffer->end--;
-        *input_buffer->end = '\0';
+        message_buffer->end--;
+        *message_buffer->end = '\0';
     }
 }
 
@@ -201,15 +208,12 @@ int main() {
 
         erase();
         generate_layout(&layout, &message_buffer);
-        
+
         draw_box(&layout, &message_buffer);
 
         move(layout.cursor_y, layout.cursor_x);
 
-        process_ch(&message_buffer);
-        
-        // Send data to the server
-        //send(client_fd, message_buffer.buffer, strlen(message_buffer.buffer), 0);
+        process_ch(&message_buffer, client_fd);
         
         // Read data from the server
         //recv(client_fd, buffer, BUFFER_SIZE - 1, 0);
