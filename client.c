@@ -35,6 +35,17 @@
 #define HLINE ACS_HLINE
 #define VLINE ACS_VLINE
 
+enum UI_DIMENSIONS {
+    LEFT_MARGIN = 1,
+    PROMPT_CHAR = '>'
+};
+
+typedef struct {
+    char* buffer;
+    char* end;
+    size_t size;
+} Buffer;
+
 typedef struct {
     int rows;
     int cols;
@@ -48,6 +59,75 @@ typedef struct {
     int cursor_x;
     int cursor_y;
 } Layout;
+
+void draw_top_bar(Layout* layout) {
+    mvaddch(layout->box_top, 0, ULCORNER);
+    for(int i = 0; i <= USABLE_WIDTH(layout->cols); i++) addch(HLINE);
+    addch(URCORNER);
+}
+
+void draw_middle_input(Layout* layout, Buffer* input_buffer) {
+    mvaddch(layout->input_top, LEFT_MARGIN, PROMPT_CHAR);
+
+    // mvaddnstr moves a specified location and print the text there
+    for (int i = 0; i < layout->input_height; i++) {
+        mvaddnstr(
+            layout->input_top + i, // Move the y to the line needed
+            INPUT_OFFSET_X, // The text will always be 2 chars to the right
+            input_buffer->buffer + i * USABLE_WIDTH(layout->cols), // print the input buffer while trimming what do don't need
+            USABLE_WIDTH(layout->cols) // We print only cols - 3 chars
+        );
+
+    }
+}
+
+void draw_vertical_lines(Layout* layout) {
+    for(int i = 0; i < layout->input_height; i++) {
+        mvaddch(layout->input_top + i, 0, VLINE);
+        mvaddch(layout->input_top + i, layout->cols - 1, VLINE);
+    }
+}
+
+void draw_bottom_bar(Layout* layout) {
+    mvaddch(layout->box_bottom, 0, LLCORNER);
+    for(int i = 0; i <= USABLE_WIDTH(layout->cols); i++) addch(HLINE);
+    addch(LRCORNER);
+}
+
+void draw_box(Layout* layout, Buffer* input_buffer) {
+    // Horizontal top bar
+    draw_top_bar(layout);
+
+    // Middle input section
+    draw_middle_input(layout, input_buffer);
+        
+    // 2 Vertical lines at sides
+    draw_vertical_lines(layout);
+
+    // Bottom bar
+    draw_bottom_bar(layout);
+}
+
+int get_input_height(Buffer* input_buffer, int cols) {
+    return (strlen(input_buffer->buffer)) / USABLE_WIDTH(cols) + BORDER_WIDTH;
+}
+
+int input_buffer_x(Layout* layout, Buffer* input_buffer) {
+    return strlen(input_buffer->buffer) - (layout->input_height - BORDER_WIDTH) * USABLE_WIDTH(layout->cols) + INPUT_OFFSET_X;
+}
+
+void generate_layout(Layout* layout, Buffer* input_buffer) {
+    getmaxyx(stdscr, layout->rows, layout->cols); // Get the rows and cols of the terminal
+
+    layout->input_height = get_input_height(input_buffer, layout->cols);
+    
+    layout->box_top = layout->rows - layout->input_height - (TOTAL_BORDER);
+    layout->input_top = layout->box_top + BORDER_WIDTH;
+    layout->box_bottom = layout->box_top + layout->input_height + BORDER_WIDTH;
+
+    layout->cursor_y = layout->input_top + layout->input_height -  BORDER_WIDTH;
+    layout->cursor_x = input_buffer_x(layout, input_buffer);
+}
 
 int main() {
     setlocale(LC_ALL, "");
@@ -79,28 +159,34 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    char message[1024] = "";
+    Layout layout;
+
+    char message_storage[1024];
+    Buffer message_buffer = {
+        .buffer = message_storage,
+        .end = message_storage,
+        .size = sizeof(message_storage)
+    };
+
+    clear();
+    generate_layout(&layout, &message_buffer);
+    draw_box(&layout, &message_buffer);
+    refresh();
 
     while(1) {
         clear();
 
-        // Get the message the client wants to send to the server
-        printf("%d, Message to server: ", client_fd);
-        fgets(message, sizeof(message), stdin);
-        message[strcspn(message, "\n")] = '\0'; // Replace the new line with a null terminator
-
-        if(strcmp(message, QUIT) == 0) {
-            close(client_fd);
-            return 0;
-        }
+        generate_layout(&layout, &message_buffer);
+        draw_box(&layout, &message_buffer);
         
         // Send data to the server
-        send(client_fd, message, strlen(message), 0);
+        //send(client_fd, message_buffer.buffer, strlen(message_buffer.buffer), 0);
         
         // Read data from the server
-        recv(client_fd, buffer, BUFFER_SIZE - 1, 0);
-        printf("\nServer response: %s\n\n", buffer);
-        memset(buffer, 0, sizeof(buffer));
+        //recv(client_fd, buffer, BUFFER_SIZE - 1, 0);
+        //memset(buffer, 0, sizeof(buffer));
+
+        refresh();
     }
 
     return 0;
