@@ -77,7 +77,6 @@ void draw_middle_input(Layout* layout, Buffer* input_buffer) {
             input_buffer->buffer + i * USABLE_WIDTH(layout->cols), // print the input buffer while trimming what do don't need
             USABLE_WIDTH(layout->cols) // We print only cols - 3 chars
         );
-
     }
 }
 
@@ -106,6 +105,31 @@ void draw_box(Layout* layout, Buffer* input_buffer) {
 
     // Bottom bar
     draw_bottom_bar(layout);
+}
+
+void process_ch(Buffer* input_buffer) {
+    int ch = getch();
+
+    bool new_line = ch == ENTER_KEY;
+
+    bool printable_char = (ch >= PRINTABLE_KEY_MIN && ch <= PRINTABLE_KEY_MAX);
+    bool input_buffer_overflow = (input_buffer->end >= input_buffer->buffer + input_buffer->size - 1);
+        
+    bool delete_key = (ch == DELETE_KEY);
+    bool input_buffer_underflow = (input_buffer->end < input_buffer->buffer + 1);
+
+    if (!input_buffer_overflow && printable_char) {
+        // Add char to the input buffer
+        *input_buffer->end = ch;
+
+        // Add the null terminator
+        input_buffer->end++;
+        *input_buffer->end = '\0';
+    } else if (delete_key && !input_buffer_underflow) {
+        // Delete key
+        input_buffer->end--;
+        *input_buffer->end = '\0';
+    }
 }
 
 int get_input_height(Buffer* input_buffer, int cols) {
@@ -174,10 +198,15 @@ int main() {
     refresh();
 
     while(1) {
-        clear();
 
+        erase();
         generate_layout(&layout, &message_buffer);
+        
         draw_box(&layout, &message_buffer);
+
+        move(layout.cursor_y, layout.cursor_x);
+
+        process_ch(&message_buffer);
         
         // Send data to the server
         //send(client_fd, message_buffer.buffer, strlen(message_buffer.buffer), 0);
