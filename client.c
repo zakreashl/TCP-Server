@@ -7,11 +7,55 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 
+#include <curses.h>
+#include <locale.h>
+
 #define PORT 8080
 #define BUFFER_SIZE 1024
 #define QUIT ":quit"
 
+#define BORDER_WIDTH 1
+#define PROMPT_WIDTH 1
+#define TOTAL_BORDER (BORDER_WIDTH * 2)
+#define INPUT_OFFSET_X 2
+#define USABLE_WIDTH(cols) ((cols) - TOTAL_BORDER - PROMPT_WIDTH)
+#define LAST_COLUMN_INDEX(cols) (cols - 1)
+#define INNER_CONTENT_WIDTH(cols) ((cols) - TOTAL_BORDER)
+
+#define DELETE_KEY 127
+#define ENTER_KEY  '\n'
+
+#define PRINTABLE_KEY_MIN 32
+#define PRINTABLE_KEY_MAX 126
+
+#define LLCORNER ACS_LLCORNER
+#define LRCORNER ACS_LRCORNER
+#define ULCORNER ACS_ULCORNER
+#define URCORNER ACS_URCORNER
+#define HLINE ACS_HLINE
+#define VLINE ACS_VLINE
+
+typedef struct {
+    int rows;
+    int cols;
+
+    int box_top;
+    int box_bottom;
+
+    int input_top;
+    int input_height;
+
+    int cursor_x;
+    int cursor_y;
+} Layout;
+
 int main() {
+    setlocale(LC_ALL, "");
+    initscr();
+    keypad(stdscr, TRUE);
+    cbreak();
+    noecho();
+
     // Will store server addr
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
@@ -35,9 +79,11 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    char message[100] = "";
+    char message[1024] = "";
 
     while(1) {
+        clear();
+
         // Get the message the client wants to send to the server
         printf("%d, Message to server: ", client_fd);
         fgets(message, sizeof(message), stdin);
