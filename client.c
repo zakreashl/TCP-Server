@@ -6,12 +6,15 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <fcntl.h>
 
 #include <curses.h>
 #include <locale.h>
 
 #define PORT 8080
-#define BUFFER_SIZE 1024
+#define HISTORY_BUFFER_SIZE 8192
+#define MESSAGE_BUFFER_SIZE 1024
+#define RECV_BUFFER_SIZE 1024
 #define QUIT ":quit"
 
 #define BORDER_WIDTH 1
@@ -34,6 +37,8 @@
 #define URCORNER ACS_URCORNER
 #define HLINE ACS_HLINE
 #define VLINE ACS_VLINE
+
+#define BUFFER_OVERFLOW_MESSAGE "\n\033[31m|--- BUFFER OVERFLOW ---|\033[0m"
 
 enum UI_DIMENSIONS {
     LEFT_MARGIN = 1,
@@ -59,6 +64,10 @@ typedef struct {
     int cursor_x;
     int cursor_y;
 } Layout;
+
+void draw_history(Layout* layout, Buffer* history_buffer) {
+    mvaddstr(0, 0, history_buffer->buffer);
+}
 
 void draw_top_bar(Layout* layout) {
     mvaddch(layout->box_top, 0, ULCORNER);
@@ -93,7 +102,10 @@ void draw_bottom_bar(Layout* layout) {
     addch(LRCORNER);
 }
 
-void draw_box(Layout* layout, Buffer* input_buffer) {
+void draw_box(Layout* layout, Buffer* input_buffer, Buffer* history_buffer) {
+    // Draw log history on top
+    draw_history(layout, history_buffer);
+
     // Horizontal top bar
     draw_top_bar(layout);
 
@@ -160,6 +172,26 @@ void generate_layout(Layout* layout, Buffer* input_buffer) {
     layout->cursor_x = input_buffer_x(layout, input_buffer);
 }
 
+void handle_recv(Buffer* history_buffer, Buffer* recv_buffer, int client_fd) {
+    int bytes_received = recv(client_fd, recv_buffer->buffer, recv_buffer->size - 1, 0);
+    bool buffer_overflow = (history_buffer->end + strlen(recv_buffer->buffer) > history_buffer->buffer + history_buffer->size);
+
+    if(buffer_overflow) {
+        strcpy(history_buffer->buffer + history_buffer->size - strlen(BUFFER_OVERFLOW_MESSAGE), BUFFER_OVERFLOW_MESSAGE);
+        exit(EXIT_FAILURE);
+    }
+    
+    if (bytes_received > 0) {
+        recv_buffer->buffer[bytes_received] = '\0';
+        strcpy(history_buffer->end, recv_buffer->buffer);
+        history_buffer->end += bytes_received;
+        *history_buffer->end = '\0';
+        *history_buffer->end++ = '\n';
+
+        *recv_buffer->buffer = '\0';
+    }
+}
+
 int main() {
     setlocale(LC_ALL, "");
     initscr();
@@ -170,8 +202,6 @@ int main() {
     // Will store server addr
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
-
-    char buffer[BUFFER_SIZE] = {0};
 
     // Create client socket
     int client_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -190,34 +220,48 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    Layout layout;
+    int flags = fcntl(client_fd, F_GETFL, 0);
+    fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
 
-    char message_storage[1024];
+    char recv_storage[RECV_BUFFER_SIZE];
+    Buffer recv_buffer = {
+        .buffer = recv_storage,
+        .end = recv_storage,
+        .size = sizeof(recv_storage)
+    };
+
+    char history_storage[HISTORY_BUFFER_SIZE];
+    Buffer history_buffer = {
+        .buffer = history_storage,
+        .end = history_storage,
+        .size = sizeof(history_storage)
+    };
+    
+    char message_storage[MESSAGE_BUFFER_SIZE];
     Buffer message_buffer = {
         .buffer = message_storage,
         .end = message_storage,
         .size = sizeof(message_storage)
     };
+    
+    Layout layout;
 
     clear();
     generate_layout(&layout, &message_buffer);
-    draw_box(&layout, &message_buffer);
+    draw_box(&layout, &message_buffer, &history_buffer);
     refresh();
 
     while(1) {
-
         erase();
         generate_layout(&layout, &message_buffer);
 
-        draw_box(&layout, &message_buffer);
-
-        move(layout.cursor_y, layout.cursor_x);
-
-        process_ch(&message_buffer, client_fd);
+        handle_recv(&history_buffer, &recv_buffer, client_fd);
         
-        // Read data from the server
-        //recv(client_fd, buffer, BUFFER_SIZE - 1, 0);
-        //memset(buffer, 0, sizeof(buffer));
+        move(layout.cursor_y, layout.cursor_x);
+        
+        draw_box(&layout, &message_buffer, &history_buffer);
+        
+        process_ch(&message_buffer, client_fd);
 
         refresh();
     }

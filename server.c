@@ -109,7 +109,6 @@ int main() {
             if(client_fd == -1) continue;
             
             if(FD_ISSET(client_fd, &read_fds)) {
-                printf("Ready Client: %d\n", client_fd);
                 memset(buffer, 0, sizeof(buffer));
                 int recv_return = recv(client_fd, buffer, sizeof(buffer), 0);
 
