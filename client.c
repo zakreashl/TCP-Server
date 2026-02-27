@@ -15,7 +15,7 @@
 #define HISTORY_BUFFER_SIZE 8192
 #define MESSAGE_BUFFER_SIZE 1024
 #define RECV_BUFFER_SIZE 1024
-#define QUIT ":quit"
+#define QUIT ":q"
 
 #define BORDER_WIDTH 1
 #define PROMPT_WIDTH 1
@@ -62,12 +62,50 @@ typedef struct {
     int input_top;
     int input_height;
 
+    int history_height;
+    int history_new_lines;
+
     int cursor_x;
     int cursor_y;
 } Layout;
 
+int get_history_height(Buffer* history_buffer, Layout* layout) {
+    int lines = 1;
+    int col = 0;
+
+    for (const char *char_ptr = history_buffer->buffer; *char_ptr; char_ptr++) {
+        if (*char_ptr == '\n') {
+            lines++;
+            col = 0;
+        } else {
+            col++;
+            if (col >= layout->cols) {
+                lines++;
+                col = 0;
+            }
+        }
+    }
+    return lines;
+}
+
+const char* history_buffer_start(Buffer* history_buffer, Layout* layout, int max_lines) {
+    int total = get_history_height(history_buffer, layout);
+    int skip = total - max_lines;
+    if (skip <= 0) return history_buffer->buffer;
+
+    const char *p = history_buffer->buffer;
+    int lines = 0;
+    for (; *p && lines < skip; p++) {
+        if (*p == '\n') {
+            lines++;
+        }
+    }
+    return p;
+}
+
 void draw_history(Layout* layout, Buffer* history_buffer) {
-    mvaddstr(0, 0, history_buffer->buffer);
+    mvaddstr(0, 0, history_buffer_start(history_buffer, layout, layout->rows - (layout->rows - layout->box_top)));
+    mvprintw(layout->box_top - 1, 0, "%d", layout->history_height);
 }
 
 void draw_top_bar(Layout* layout) {
@@ -120,7 +158,7 @@ void draw_box(Layout* layout, Buffer* input_buffer, Buffer* history_buffer) {
     draw_bottom_bar(layout);
 }
 
-void process_ch(Buffer* message_buffer, int client_fd) {
+void process_ch(Buffer* message_buffer, Layout* layout, int client_fd) {
     timeout(0); // Make the getch() not pause the entire program
     int ch = getch();
 
@@ -133,6 +171,11 @@ void process_ch(Buffer* message_buffer, int client_fd) {
     bool input_buffer_underflow = (message_buffer->end < message_buffer->buffer + 1);
 
     if (new_line) {
+        if(strcmp(message_buffer->buffer, QUIT) == 0) {
+            close(client_fd);
+            exit(EXIT_SUCCESS);
+        }
+
         // If it is a new line then send it to the server
         send(client_fd, message_buffer->buffer, strlen(message_buffer->buffer), 0);
 
@@ -161,10 +204,11 @@ int input_buffer_x(Layout* layout, Buffer* input_buffer) {
     return strlen(input_buffer->buffer) - (layout->input_height - BORDER_WIDTH) * USABLE_WIDTH(layout->cols) + INPUT_OFFSET_X;
 }
 
-void generate_layout(Layout* layout, Buffer* input_buffer) {
+void generate_layout(Layout* layout, Buffer* input_buffer, Buffer* history_buffer) {
     getmaxyx(stdscr, layout->rows, layout->cols); // Get the rows and cols of the terminal
 
     layout->input_height = get_input_height(input_buffer, layout->cols);
+    layout->history_height = get_history_height(history_buffer, layout);
     
     layout->box_top = layout->rows - layout->input_height - (TOTAL_BORDER);
     layout->input_top = layout->box_top + BORDER_WIDTH;
@@ -187,8 +231,8 @@ void handle_recv(Buffer* history_buffer, Buffer* recv_buffer, int client_fd) {
         recv_buffer->buffer[bytes_received] = '\0';
         strcpy(history_buffer->end, recv_buffer->buffer);
         history_buffer->end += bytes_received;
-        *history_buffer->end = '\0';
         *history_buffer->end++ = '\n';
+        *history_buffer->end = '\0';
 
         *recv_buffer->buffer = '\0';
     }
@@ -238,6 +282,7 @@ int main() {
         .end = history_storage,
         .size = sizeof(history_storage)
     };
+    *history_buffer.end = '\0';
     
     char message_storage[MESSAGE_BUFFER_SIZE];
     Buffer message_buffer = {
@@ -245,17 +290,18 @@ int main() {
         .end = message_storage,
         .size = sizeof(message_storage)
     };
+    *message_buffer.end = '\0';
     
-    Layout layout;
+    Layout layout = {0};
     
     clear();
-    generate_layout(&layout, &message_buffer);
+    generate_layout(&layout, &message_buffer, &history_buffer);
     draw_box(&layout, &message_buffer, &history_buffer);
     refresh();
     
     while(1) {
         erase();
-        generate_layout(&layout, &message_buffer);
+        generate_layout(&layout, &message_buffer, &history_buffer);
 
         handle_recv(&history_buffer, &recv_buffer, client_fd);
 
@@ -263,7 +309,7 @@ int main() {
         
         move(layout.cursor_y, layout.cursor_x);
         
-        process_ch(&message_buffer, client_fd);
+        process_ch(&message_buffer, &layout, client_fd);
 
         refresh();
     }
