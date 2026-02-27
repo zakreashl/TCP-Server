@@ -25,11 +25,12 @@
 #define LAST_COLUMN_INDEX(cols) (cols - 1)
 #define INNER_CONTENT_WIDTH(cols) ((cols) - TOTAL_BORDER)
 
-#define DELETE_KEY 127
-#define ENTER_KEY  '\n'
-
-#define PRINTABLE_KEY_MIN 32
-#define PRINTABLE_KEY_MAX 126
+enum SpecialKeys {
+    DELETE_KEY = 127,
+    ENTER_KEY = '\n',
+    PRINTABLE_KEY_MIN = 32,
+    PRINTABLE_KEY_MAX = 126
+};
 
 #define LLCORNER ACS_LLCORNER
 #define LRCORNER ACS_LRCORNER
@@ -38,7 +39,7 @@
 #define HLINE ACS_HLINE
 #define VLINE ACS_VLINE
 
-#define BUFFER_OVERFLOW_MESSAGE "\n\033[31m|--- BUFFER OVERFLOW ---|\033[0m"
+#define BUFFER_OVERFLOW_MESSAGE "\n|--- BUFFER OVERFLOW ---|"
 
 enum UI_DIMENSIONS {
     LEFT_MARGIN = 1,
@@ -120,6 +121,7 @@ void draw_box(Layout* layout, Buffer* input_buffer, Buffer* history_buffer) {
 }
 
 void process_ch(Buffer* message_buffer, int client_fd) {
+    timeout(0); // Make the getch() not pause the entire program
     int ch = getch();
 
     bool new_line = ch == ENTER_KEY;
@@ -245,21 +247,21 @@ int main() {
     };
     
     Layout layout;
-
+    
     clear();
     generate_layout(&layout, &message_buffer);
     draw_box(&layout, &message_buffer, &history_buffer);
     refresh();
-
+    
     while(1) {
         erase();
         generate_layout(&layout, &message_buffer);
 
         handle_recv(&history_buffer, &recv_buffer, client_fd);
+
+        draw_box(&layout, &message_buffer, &history_buffer);
         
         move(layout.cursor_y, layout.cursor_x);
-        
-        draw_box(&layout, &message_buffer, &history_buffer);
         
         process_ch(&message_buffer, client_fd);
 
