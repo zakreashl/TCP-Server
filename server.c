@@ -10,7 +10,30 @@
 #define PORT 8080
 #define BUFFER_SIZE 1024
 #define MAX_CLIENTS 5
-#define QUIT ":q"
+
+int find(int arr[], size_t size, int val) {
+    for(int i = 0; i < size; i++) {
+        if(arr[i] == val) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+void handle_recv(char buffer[BUFFER_SIZE], int clients[MAX_CLIENTS], int client_fd) {
+    if(*buffer != ':') return;
+
+    int client_to_send_to = buffer[1] - '0';
+
+    if(find(clients, MAX_CLIENTS, client_to_send_to) < 0) {
+        printf("Client %lu not found\n", sizeof(*buffer));
+        snprintf(buffer, BUFFER_SIZE, "Client %d not found", client_to_send_to);
+        send(client_fd, buffer, strlen(buffer), 0);
+    }
+
+    send(client_to_send_to, buffer, strlen(buffer), 0);
+}
 
 int main() {
     int clients[MAX_CLIENTS];
@@ -112,16 +135,14 @@ int main() {
                 memset(buffer, 0, sizeof(buffer));
                 int recv_return = recv(client_fd, buffer, sizeof(buffer), 0);
 
-                if(recv_return <= 0 || strcmp(buffer, QUIT) == 0) {
+                if(recv_return <= 0) {
                     printf("Client %d disconnected\n", client_fd);
                     close(client_fd);
                     clients[i] = -1;
                     continue;
                 } 
             
-                printf("Recived from client %d: %s\n", client_fd, buffer);
-
-                send(client_fd, buffer, recv_return, 0);
+                handle_recv(buffer, clients, client_fd);
             }
         }
 
