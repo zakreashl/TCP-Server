@@ -9,7 +9,7 @@
 
 #define PORT 8080
 #define BUFFER_SIZE 1024
-#define MAX_CLIENTS 5
+#define MAX_CLIENTS 10
 
 int find(int arr[], size_t size, int val) {
     for(int i = 0; i < size; i++) {
