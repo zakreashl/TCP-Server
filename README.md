@@ -34,4 +34,4 @@ So we get the char after the ``:`` and parse it into an int which is the client 
 The client connects to the server and a TUI is drawn inside a while loop. The client is able to type their message into the TUI and send it to the server whenever enter is pressed.
 Any message a client receives from the server or another client is shown in a `history_buffer` above the message box.
 
-![Server/client demo](https://github.com/user-attachments/assets/d6fea802-315f-41fc-975e-d444000ba5b2")
+![Server/client demo](https://github.com/user-attachments/assets/d6fea802-315f-41fc-975e-d444000ba5b2)
